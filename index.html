@@ -175,7 +175,6 @@ async function fbRead(pin){
 
 async function fbWrite(pin, data){
   try{
-    // Convert hist arrays to keyed objects (Firebase hates arrays)
     const hist = {};
     (data.kids||[]).forEach(k=>{
       const arr = Array.isArray(data.hist[k.id]) ? data.hist[k.id] : Object.values(data.hist[k.id]||{});
@@ -183,17 +182,28 @@ async function fbWrite(pin, data){
       arr.forEach(e=>{ hist[k.id][String(e.id)] = e; });
     });
     const slim = {
-      ...data,
       kids: data.kids.map(k=>({...k,photo:null})),
+      pts:  JSON.parse(JSON.stringify(data.pts||{})),
       hist,
+      ts:   data.ts,
     };
+    console.log("fbWrite sending pts:", JSON.stringify(slim.pts));
     const r = await fetch(fbPath(pin),{
       method:"PUT",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(slim),
     });
-    if(!r.ok){ const t=await r.text(); console.error("fbWrite",r.status,t); }
-  }catch(e){ console.error("fbWrite",e); }
+    if(!r.ok){
+      const t=await r.text();
+      console.error("fbWrite error",r.status,t);
+      showToast("Sync error: "+r.status,"warn");
+    } else {
+      console.log("fbWrite OK");
+    }
+  }catch(e){
+    console.error("fbWrite exception",e);
+    showToast("No connection","warn");
+  }
 }
 
 function normalise(raw){
@@ -233,11 +243,12 @@ function mergePhotos(kids,photos){
 
 function persist(){
   if(!state.currentPin||!state.data) return;
-  state.data.ts = Date.now();
+  const snapshot = JSON.parse(JSON.stringify(state.data)); // deep copy
+  snapshot.ts = Date.now();
+  state.data.ts = snapshot.ts;
   savePhotos(state.currentPin, state.data.kids);
-  // Write to Firebase, then immediately re-read to confirm what's stored
-  fbWrite(state.currentPin, state.data).then(()=>{
-    // update sync badge
+  console.log("persist() pts:", JSON.stringify(snapshot.pts));
+  fbWrite(state.currentPin, snapshot).then(()=>{
     state.syncTime = new Date();
     const badge = document.querySelector(".sync-badge");
     if(badge) badge.innerHTML = `<span class="sync-dot"></span>Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
