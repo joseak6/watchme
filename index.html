@@ -601,18 +601,21 @@ function doAward(){
   const v=parseInt(state.awardAmt)||0; if(!v) return;
   const cat=CATS.find(c=>c.id===state.awardCat);
   const kid=state.activeKid;
+  const note=state.awardNote;
   state.data={
     ...state.data,
     pts:{...state.data.pts,[kid]:{...state.data.pts[kid],[state.awardCat]:(state.data.pts[kid]?.[state.awardCat]||0)+v}},
     hist:{...state.data.hist,[kid]:[
-      {id:Date.now(),type:v>=0?"award":"penalty",cat:state.awardCat,amt:v,note:state.awardNote,by:state.awardParent,...stamp()},
+      {id:Date.now(),type:v>=0?"award":"penalty",cat:state.awardCat,amt:v,note:note,by:state.awardParent,...stamp()},
       ...(state.data.hist[kid]||[]),
     ]},
     ts:Date.now(),
   };
-  persist();
+  state.awardNote="";
+  state.view="home";
+  renderApp();
   showToast(`${v>0?"+":""}${v} pts for ${cat?.label}!`, v>=0?"ok":"warn");
-  state.awardNote=""; state.view="home"; renderApp();
+  persist();
 }
 
 function doRedeem(rid){
