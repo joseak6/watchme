@@ -770,7 +770,7 @@ function resetCat(catId){
     <div style="font-size:12px;opacity:.5;margin-bottom:22px">This will set ${ak?.name}'s ${cat?.label} points to 0.</div>
     <div style="display:flex;gap:10px">
       <button class="btn" onclick="this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:14px">Cancel</button>
-      <button class="btn" onclick="doResetCat('${catId}');this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:#F97316;border:none;color:#fff;font-weight:800;font-size:14px">Reset</button>
+      <button class="btn" onclick="doResetCat('${catId}')" style="flex:1;border-radius:12px;padding:13px;background:#F97316;border:none;color:#fff;font-weight:800;font-size:14px">Reset</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -781,6 +781,7 @@ function doResetCat(catId){
   state.data={...state.data,
     pts:{...state.data.pts,[kid]:{...state.data.pts[kid],[catId]:0}},
     ts:Date.now()};
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
   persist(); renderApp();
   showToast("Category reset","warn");
 }
@@ -795,7 +796,7 @@ function resetAllPoints(){
     <div style="font-size:12px;opacity:.5;margin-bottom:22px">This will set all of ${ak?.name}'s points to 0. History is kept.</div>
     <div style="display:flex;gap:10px">
       <button class="btn" onclick="this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:14px">Cancel</button>
-      <button class="btn" onclick="doResetAll();this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:#EF4444;border:none;color:#fff;font-weight:800;font-size:14px">Reset All</button>
+      <button class="btn" onclick="doResetAll()" style="flex:1;border-radius:12px;padding:13px;background:#EF4444;border:none;color:#fff;font-weight:800;font-size:14px">Reset All</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -806,6 +807,7 @@ function doResetAll(){
   state.data={...state.data,
     pts:{...state.data.pts,[kid]:Object.fromEntries(CATS.map(c=>[c.id,0]))},
     ts:Date.now()};
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
   persist(); renderApp();
   showToast("All points reset","warn");
 }
@@ -875,7 +877,7 @@ function deleteEntry(entryId){
     <div style="font-size:12px;opacity:.5;margin-bottom:22px">Points will be reversed.</div>
     <div style="display:flex;gap:10px">
       <button class="btn" onclick="this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:14px">Cancel</button>
-      <button class="btn" onclick="doDeleteEntry('${entryId}');this.closest('.modal-bg').remove()" style="flex:1;border-radius:12px;padding:13px;background:#EF4444;border:none;color:#fff;font-weight:800;font-size:14px">Delete</button>
+      <button class="btn" onclick="doDeleteEntry('${entryId}')" style="flex:1;border-radius:12px;padding:13px;background:#EF4444;border:none;color:#fff;font-weight:800;font-size:14px">Delete</button>
     </div>
   </div>`;
   document.body.appendChild(modal);
@@ -886,7 +888,6 @@ function doDeleteEntry(entryId){
   const hist=state.data.hist[kid]||[];
   const entry=hist.find(h=>String(h.id)===String(entryId));
   if(!entry) return;
-  // Reverse the points
   const newPts={...state.data.pts[kid]};
   const cat=entry.cat;
   if(cat&&cat!=="redeem") newPts[cat]=(newPts[cat]||0)-entry.amt;
@@ -894,6 +895,7 @@ function doDeleteEntry(entryId){
     pts:{...state.data.pts,[kid]:newPts},
     hist:{...state.data.hist,[kid]:hist.filter(h=>String(h.id)!==String(entryId))},
     ts:Date.now()};
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
   persist(); renderApp();
   showToast("Entry deleted","warn");
 }
