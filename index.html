@@ -375,6 +375,7 @@ function renderApp(){
             📷<input type="file" accept="image/*" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0" onchange="handleEditPhoto(this,'${ak.id}')">
           </label>
         </div>
+        ${ak.photo?`<button class="btn" onclick="removePhoto('${ak.id}')" style="margin-top:6px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:4px 14px;color:#FC9494;font-size:11px;font-weight:700;cursor:pointer">Remove photo</button>`:""}
         <div style="font-size:14px;opacity:.65;font-weight:700;margin-bottom:2px">${ak.name}'s Total</div>
         <div style="font-size:64px;font-weight:900;line-height:1;background:linear-gradient(135deg,${ak.color},#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${kTot}</div>
         <div style="font-size:11px;opacity:.4;font-weight:700;letter-spacing:2px">POINTS</div>
@@ -719,6 +720,16 @@ function doRemove(kidId){
   state.activeKid=state.data.kids[0]?.id||null;
   state.view="home"; renderApp();
   showToast("Removed","warn");
+}
+
+function removePhoto(kidId){
+  if(!state.data) return;
+  state.data={...state.data,kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:null}:k),ts:Date.now()};
+  // Remove from local photo storage too
+  const photos=loadPhotos(state.currentPin);
+  delete photos[kidId];
+  try{localStorage.setItem(PHOTO_KEY(state.currentPin),JSON.stringify(photos));}catch(e){}
+  renderApp(); showToast("Photo removed","warn");
 }
 
 async function handleEditPhoto(input, kidId){
