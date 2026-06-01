@@ -233,51 +233,55 @@ function mergePhotos(kids,photos){
 
 function persist(){
   if(!state.currentPin||!state.data) return;
-  state.data.ts = Date.now(); // update ts so other device poll sees it as newer
+  state.data.ts = Date.now();
   savePhotos(state.currentPin, state.data.kids);
-  fbWrite(state.currentPin, state.data);
+  // Write to Firebase, then immediately re-read to confirm what's stored
+  fbWrite(state.currentPin, state.data).then(()=>{
+    // update sync badge
+    state.syncTime = new Date();
+    const badge = document.querySelector(".sync-badge");
+    if(badge) badge.innerHTML = `<span class="sync-dot"></span>Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
+  });
+}
+
+async function pollFirebase(){
+  if(!state.currentPin) return;
+  const remote = await fbRead(state.currentPin);
+  if(!remote) return;
+  // Always apply remote if it has a newer or equal ts
+  // Use remote as source of truth for pts and hist
+  if((remote.ts||0) >= (state.data?.ts||0)){
+    const photos = loadPhotos(state.currentPin);
+    // Keep local ts if we just wrote (within 2s) to avoid overwriting our own changes
+    const localTs = state.data?.ts||0;
+    const remoteTs = remote.ts||0;
+    const justWrote = (Date.now() - localTs) < 2000;
+    if(!justWrote || remoteTs > localTs){
+      state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
+      state.syncTime = new Date();
+      renderApp();
+    }
+  }
 }
 
 async function syncNow(){
   if(!state.currentPin) return;
   const remote = await fbRead(state.currentPin);
-  if(remote && (remote.ts||0) > (state.data?.ts||0)){
-    const photos = loadPhotos(state.currentPin);
-    state.data = {...remote, kids:mergePhotos(remote.kids,photos)};
-    state.syncTime = new Date();
-    renderApp();
-    showToast("Synced! ✓");
-  } else {
-    state.syncTime = new Date();
-    renderApp();
-    showToast("Up to date ✓");
-  }
+  if(!remote){ showToast("Couldn't reach server","warn"); return; }
+  const photos = loadPhotos(state.currentPin);
+  state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
+  state.syncTime = new Date();
+  renderApp();
+  showToast("Synced! ✓");
 }
 
 function startPolling(pin){
   if(state.pollTimer) clearInterval(state.pollTimer);
-  state.pollTimer = setInterval(async()=>{
-    if(!state.currentPin) return;
-    const remote = await fbRead(state.currentPin);
-    if(remote && (remote.ts||0)>(state.data?.ts||0)){
-      const photos = loadPhotos(state.currentPin);
-      state.data = {...remote, kids:mergePhotos(remote.kids,photos)};
-      state.syncTime = new Date();
-      renderApp();
-    }
-  }, 5000); // poll every 5 seconds
+  state.pollTimer = setInterval(()=>pollFirebase(), 5000);
 
-  // Also sync immediately when app becomes visible (user switches back to tab)
-  document.addEventListener("visibilitychange", async()=>{
-    if(document.visibilityState==="visible" && state.currentPin){
-      const remote = await fbRead(state.currentPin);
-      if(remote && (remote.ts||0)>(state.data?.ts||0)){
-        const photos = loadPhotos(state.currentPin);
-        state.data = {...remote, kids:mergePhotos(remote.kids,photos)};
-        state.syncTime = new Date();
-        renderApp();
-      }
-    }
+  // Also sync when app becomes visible
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState==="visible") pollFirebase();
   });
 }
 
