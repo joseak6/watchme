@@ -401,10 +401,10 @@ function renderApp(){
     const pills=[5,10,15,20,25,50].map(n=>{
       const v=isNeg?-n:n;
       const active=Math.abs(state.awardAmt)===n;
-      return `<button class="amount-pill btn" onclick="setAmt(${v})" style="background:${active?ak.color:"rgba(255,255,255,0.08)"}">${isNeg?"-":"+"}{${n}}</button>`.replace("{","").replace("}","");
+      return `<button class="amount-pill btn" data-amt="${v}" onclick="setAmt(${v})" style="background:${active?ak.color:"rgba(255,255,255,0.08)"}">${isNeg?"-":"+"}{${n}}</button>`.replace("{","").replace("}","");
     }).join("");
     const catPicks=CATS.map(c=>`
-      <div class="cat-pick card" onclick="setACat('${c.id}')" style="background:${state.awardCat===c.id?`${ak.color}28`:"rgba(255,255,255,0.06)"};border:${state.awardCat===c.id?`1.5px solid ${ak.color}`:"1px solid rgba(255,255,255,0.1)"}">
+      <div class="cat-pick card" data-cat="${c.id}" onclick="setACat('${c.id}')" style="background:${state.awardCat===c.id?`${ak.color}28`:"rgba(255,255,255,0.06)"};border:${state.awardCat===c.id?`1.5px solid ${ak.color}`:"1px solid rgba(255,255,255,0.1)"}">
         <div style="font-size:20px">${c.emoji}</div>
         <div style="font-size:10px;font-weight:700;opacity:.8;margin-top:2px">${c.label}</div>
       </div>`).join("");
@@ -426,7 +426,7 @@ function renderApp(){
       <div style="margin-bottom:18px">
         <div class="field-label">Amount</div>
         <div class="amount-pills">${pills}</div>
-        <input type="number" class="text-input" value="${state.awardAmt}" oninput="state.awardAmt=parseInt(this.value)||0;renderApp()" style="font-size:18px;font-weight:800;text-align:center"/>
+        <input type="number" class="text-input" value="${state.awardAmt}" id="amt-input" oninput="state.awardAmt=parseInt(this.value)||0" style="font-size:18px;font-weight:800;text-align:center"/>
       </div>
       <div style="margin-bottom:18px">
         <div class="field-label">Awarded by</div>
@@ -437,9 +437,9 @@ function renderApp(){
       </div>
       <div style="margin-bottom:22px">
         <div class="field-label">Note (optional)</div>
-        <input type="text" class="text-input" placeholder="e.g. Read for 20 mins!" value="${state.awardNote}" oninput="state.awardNote=this.value" style="font-size:13px;font-weight:600"/>
+        <input type="text" class="text-input" placeholder="e.g. Read for 20 mins!" value="${state.awardNote}" id="note-input" oninput="state.awardNote=this.value" style="font-size:13px;font-weight:600"/>
       </div>
-      <button class="btn" onclick="doAward()" style="width:100%;border-radius:14px;padding:17px;background:${isNeg?"#EF4444":`linear-gradient(135deg,${ak.color},${ak.color}99)`};color:#fff;font-weight:900;font-size:17px;border:none;box-shadow:${isNeg?"0 4px 18px #EF444455":`0 4px 18px ${ak.color}55`}">
+      <button class="btn" id="award-submit-btn" onclick="doAward()" style="width:100%;border-radius:14px;padding:17px;background:${isNeg?"#EF4444":`linear-gradient(135deg,${ak.color},${ak.color}99)`};color:#fff;font-weight:900;font-size:17px;border:none;box-shadow:${isNeg?"0 4px 18px #EF444455":`0 4px 18px ${ak.color}55`}">
         ${isNeg?`⚡ Apply ${state.awardAmt} pts`:`⭐ Award +${state.awardAmt} pts`}
       </button>
     </div>`;
@@ -593,11 +593,38 @@ function lock(){
 
 function switchKid(id){ state.activeKid=id; state.view="home"; renderApp(); }
 function setView(v){ state.view=v; renderApp(); }
-function setACat(id){ state.awardCat=id; renderApp(); }
-function setAmt(v){ state.awardAmt=v; renderApp(); }
-function setAwardSign(s){ state.awardAmt=s*Math.abs(state.awardAmt||10); renderApp(); }
+function setACat(id){
+  state.awardCat=id;
+  // Just update category button highlights without full re-render
+  document.querySelectorAll('.cat-pick').forEach(el=>{
+    const isActive=el.dataset.cat===id;
+    const ak=state.data?.kids?.find(k=>k.id===state.activeKid)||state.data?.kids?.[0];
+    el.style.background=isActive?`${ak?.color||'#7C3AED'}28`:'rgba(255,255,255,0.06)';
+    el.style.border=isActive?`1.5px solid ${ak?.color||'#7C3AED'}`:'1px solid rgba(255,255,255,0.1)';
+  });
+}
+function setAmt(v){
+  state.awardAmt=v;
+  const inp=document.getElementById("amt-input");
+  if(inp) inp.value=v;
+  // Update pill highlights
+  const ak=state.data?.kids?.find(k=>k.id===state.activeKid)||state.data?.kids?.[0];
+  document.querySelectorAll('.amount-pill').forEach(el=>{
+    el.style.background=Math.abs(v)===Math.abs(parseInt(el.dataset.amt)||0)?(ak?.color||'#7C3AED'):'rgba(255,255,255,0.08)';
+  });
+  // Update award button text
+  const btn=document.getElementById("award-submit-btn");
+  if(btn) btn.textContent=v<0?`⚡ Apply ${v} pts`:`⭐ Award +${v} pts`;
+}
+function setAwardSign(s){
+  state.awardAmt=s*Math.abs(state.awardAmt||10);
+  renderApp(); // Need full re-render for sign change (button styles change)
+}
 
 function doAward(){
+  // Read directly from input in case oninput hasn't fired
+  const inp=document.getElementById("amt-input");
+  if(inp) state.awardAmt=parseInt(inp.value)||state.awardAmt;
   const v=parseInt(state.awardAmt)||0; if(!v) return;
   const cat=CATS.find(c=>c.id===state.awardCat);
   const kid=state.activeKid;
