@@ -233,8 +233,25 @@ function mergePhotos(kids,photos){
 
 function persist(){
   if(!state.currentPin||!state.data) return;
+  state.data.ts = Date.now(); // update ts so other device poll sees it as newer
   savePhotos(state.currentPin, state.data.kids);
-  fbWrite(state.currentPin, {...state.data, ts:Date.now()});
+  fbWrite(state.currentPin, state.data);
+}
+
+async function syncNow(){
+  if(!state.currentPin) return;
+  const remote = await fbRead(state.currentPin);
+  if(remote && (remote.ts||0) > (state.data?.ts||0)){
+    const photos = loadPhotos(state.currentPin);
+    state.data = {...remote, kids:mergePhotos(remote.kids,photos)};
+    state.syncTime = new Date();
+    renderApp();
+    showToast("Synced! ✓");
+  } else {
+    state.syncTime = new Date();
+    renderApp();
+    showToast("Up to date ✓");
+  }
 }
 
 function startPolling(pin){
@@ -248,7 +265,20 @@ function startPolling(pin){
       state.syncTime = new Date();
       renderApp();
     }
-  },10000);
+  }, 5000); // poll every 5 seconds
+
+  // Also sync immediately when app becomes visible (user switches back to tab)
+  document.addEventListener("visibilitychange", async()=>{
+    if(document.visibilityState==="visible" && state.currentPin){
+      const remote = await fbRead(state.currentPin);
+      if(remote && (remote.ts||0)>(state.data?.ts||0)){
+        const photos = loadPhotos(state.currentPin);
+        state.data = {...remote, kids:mergePhotos(remote.kids,photos)};
+        state.syncTime = new Date();
+        renderApp();
+      }
+    }
+  });
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -564,7 +594,10 @@ function renderApp(){
         <button class="btn" onclick="setView('addkid')" style="background:rgba(255,255,255,0.08);border:1.5px dashed rgba(255,255,255,.3);border-radius:11px;padding:5px 12px;color:#fff;font-size:12px;font-weight:700">+ Kid</button>
       </div>
     </div>
-    <div class="sync-badge"><span class="sync-dot"></span>${state.syncTime?`Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"Family Tracker"}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <div class="sync-badge" style="margin-bottom:0"><span class="sync-dot"></span>${state.syncTime?`Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"Connecting…"}</div>
+      <button class="btn" onclick="syncNow()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:3px 10px;color:#fff;font-size:11px;font-weight:700;cursor:pointer">🔄 Sync</button>
+    </div>
     <div class="kid-tabs">${kidTabs}</div>
   </div>
   <div id="content">${content}</div>
