@@ -107,9 +107,7 @@
 </head>
 <body>
 <div id="app">
-  <!-- Hidden file inputs wrapped in labels for reliable mobile triggering -->
-  <label id="img-label" style="display:none"><input type="file" id="img-input" accept="image/*"/></label>
-  <label id="edit-img-label" style="display:none"><input type="file" id="edit-img-input" accept="image/*"/></label>
+
 
   <!-- Toast -->
   <div id="toast"></div>
@@ -373,7 +371,9 @@ function renderApp(){
       <div class="hero" style="background:linear-gradient(135deg,${ak.color}28,${ak.color}0d);border:1.5px solid ${ak.color}40">
         <div class="hero-photo-wrap float">
           ${avaHTML(ak,88)}
-          <label for="edit-img-input" class="hero-edit-btn btn" onmousedown="state.pendingPhotoKid='${ak.id}'" ontouchstart="state.pendingPhotoKid='${ak.id}'" style="border:2px solid ${ak.color};display:flex;align-items:center;justify-content:center;cursor:pointer">📷</label>
+          <label class="hero-edit-btn" style="border:2px solid ${ak.color};display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden">
+            📷<input type="file" accept="image/*" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0" onchange="handleEditPhoto(this,'${ak.id}')">
+          </label>
         </div>
         <div style="font-size:14px;opacity:.65;font-weight:700;margin-bottom:2px">${ak.name}'s Total</div>
         <div style="font-size:64px;font-weight:900;line-height:1;background:linear-gradient(135deg,${ak.color},#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${kTot}</div>
@@ -517,7 +517,9 @@ function renderApp(){
         <div class="field-label">Photo (optional)</div>
         <div style="position:relative;display:inline-block">
           ${photoPreview}
-          <label for="img-input" class="btn" style="position:absolute;bottom:2px;right:2px;width:26px;height:26px;border-radius:50%;background:rgba(15,10,35,.9);border:2px solid ${state.newColor};font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer">📷</label>
+          <label style="position:absolute;bottom:2px;right:2px;width:26px;height:26px;border-radius:50%;background:rgba(15,10,35,.9);border:2px solid ${state.newColor};font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden">
+            📷<input type="file" accept="image/*" style="position:absolute;opacity:0;width:100%;height:100%;cursor:pointer;top:0;left:0" onchange="handleNewPhoto(this)">
+          </label>
         </div>
         ${state.newPhoto?`<button class="btn" onclick="state.newPhoto=null;renderApp()" style="display:block;margin:7px auto 0;background:rgba(239,68,68,0.18);border:1px solid #EF444448;border-radius:8px;padding:4px 11px;color:#FC9494;font-size:11px;font-weight:700">Remove</button>`:""}
       </div>
@@ -719,9 +721,18 @@ function doRemove(kidId){
   showToast("Removed","warn");
 }
 
-function editPhoto(){
-  // kept for compatibility — label now handles trigger directly
-  state.pendingPhotoKid=state.activeKid;
+async function handleEditPhoto(input, kidId){
+  const f=input.files[0]; if(!f) return;
+  const url=await resizeImg(f);
+  state.data={...state.data,kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:url}:k),ts:Date.now()};
+  savePhotos(state.currentPin,state.data.kids);
+  renderApp(); showToast("Photo updated! 📸");
+}
+
+async function handleNewPhoto(input){
+  const f=input.files[0]; if(!f) return;
+  state.newPhoto=await resizeImg(f);
+  renderApp();
 }
 
 function showChangePinModal(){
@@ -901,19 +912,7 @@ function doDeleteEntry(entryId){
 }
 
 // File input handlers
-document.getElementById("img-input").addEventListener("change",async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  state.newPhoto=await resizeImg(f); e.target.value=""; renderApp();
-});
-document.getElementById("edit-img-input").addEventListener("change",async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const url=await resizeImg(f); e.target.value="";
-  if(!state.pendingPhotoKid||!state.data) return;
-  state.data={...state.data,kids:state.data.kids.map(k=>k.id===state.pendingPhotoKid?{...k,photo:url}:k),ts:Date.now()};
-  savePhotos(state.currentPin,state.data.kids);
-  // Don't write photo to Firebase (too large) — local only
-  renderApp(); showToast("Photo updated! 📸");
-});
+// File inputs handled inline via onchange handlers
 
 // ─── Boot ──────────────────────────────────────────────────────────────────────
 render();
