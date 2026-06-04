@@ -242,16 +242,41 @@ function mergePhotos(kids,photos){
 
 function persist(){
   if(!state.currentPin||!state.data) return;
-  const snapshot = JSON.parse(JSON.stringify(state.data)); // deep copy
+  const snapshot = JSON.parse(JSON.stringify(state.data));
   snapshot.ts = Date.now();
   state.data.ts = snapshot.ts;
   savePhotos(state.currentPin, state.data.kids);
-  console.log("persist() pts:", JSON.stringify(snapshot.pts));
-  fbWrite(state.currentPin, snapshot).then(()=>{
-    state.syncTime = new Date();
-    const badge = document.querySelector(".sync-badge");
-    if(badge) badge.innerHTML = `<span class="sync-dot"></span>Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
+  // Convert hist for Firebase
+  const hist={};
+  (snapshot.kids||[]).forEach(k=>{
+    const arr=Array.isArray(snapshot.hist[k.id])?snapshot.hist[k.id]:Object.values(snapshot.hist[k.id]||{});
+    hist[k.id]={};
+    arr.forEach(e=>{hist[k.id][String(e.id)]=e;});
   });
+  const payload = JSON.stringify({
+    kids: snapshot.kids.map(k=>({...k,photo:null})),
+    pts:  snapshot.pts,
+    hist,
+    ts:   snapshot.ts,
+  });
+  const url = fbPath(state.currentPin);
+  console.log("persist() writing to:", url, "pts:", JSON.stringify(snapshot.pts));
+  // Use fetch with keepalive:true so it survives DOM changes
+  fetch(url, {
+    method:"PUT",
+    headers:{"Content-Type":"application/json"},
+    body: payload,
+    keepalive: true,
+  }).then(r=>{
+    if(r.ok){
+      console.log("Firebase write OK");
+      state.syncTime = new Date();
+      const badge = document.querySelector(".sync-badge");
+      if(badge) badge.innerHTML = `<span class="sync-dot"></span>Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
+    } else {
+      r.text().then(t=>{ console.error("Firebase write failed:",r.status,t); showToast("Sync failed: "+r.status,"warn"); });
+    }
+  }).catch(e=>{ console.error("Firebase write error:",e); showToast("No connection","warn"); });
 }
 
 async function pollFirebase(){
@@ -699,10 +724,10 @@ function doAward(){
     ts:Date.now(),
   };
   state.awardNote="";
+  persist(); // write to Firebase FIRST before any DOM changes
   state.view="home";
   renderApp();
   showToast(`${v>0?"+":""}${v} pts for ${cat?.label}!`, v>=0?"ok":"warn");
-  persist();
 }
 
 function doRedeem(rid){
@@ -721,7 +746,7 @@ function doRedeem(rid){
     ]},
     ts:Date.now(),
   };
-  persist();
+  persist(); // write first
   showToast(`🎉 Redeemed ${r.label}!`,"redeem");
   renderApp();
 }
@@ -737,10 +762,10 @@ function doAddKid(){
     hist:{...state.data.hist,[id]:[]},
     ts:Date.now(),
   };
-  persist();
+  persist(); // write first
   state.newName=""; state.newPhoto=null; state.activeKid=id; state.view="home";
-  showToast(`${k.name} added! 🎉`);
   renderApp();
+  showToast(`${k.name} added! 🎉`);
 }
 
 function confirmRemove(kidId){
