@@ -245,7 +245,7 @@ function persist(){
   const snapshot = JSON.parse(JSON.stringify(state.data));
   snapshot.ts = Date.now();
   state.data.ts = snapshot.ts;
-  savePhotos(state.currentPin, state.data.kids);
+  savePhotos(state.currentPin, state.data.kids); // also cache locally
   // Convert hist for Firebase
   const hist={};
   (snapshot.kids||[]).forEach(k=>{
@@ -254,7 +254,7 @@ function persist(){
     arr.forEach(e=>{hist[k.id][String(e.id)]=e;});
   });
   const payload = JSON.stringify({
-    kids: snapshot.kids.map(k=>({...k,photo:null})),
+    kids: snapshot.kids, // include photos — compressed small enough for Firebase
     pts:  snapshot.pts,
     hist,
     ts:   snapshot.ts,
@@ -363,6 +363,7 @@ async function syncNow(){
 function startPolling(pin){
   if(state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(()=>pollFirebase(), 5000);
+  // Note: photos now stored in Firebase directly, localStorage is just a cache
 
   // Also sync when app becomes visible
   document.addEventListener("visibilitychange", ()=>{
@@ -399,11 +400,12 @@ function resizeImg(file){
     rd.onload=e=>{
       const img=new Image();
       img.onload=()=>{
-        const s=Math.min(1,260/Math.max(img.width,img.height));
+        // Keep small enough for Firebase (max ~200KB base64 = ~150KB image)
+        const s=Math.min(1,180/Math.max(img.width,img.height));
         const c=document.createElement("canvas");
         c.width=img.width*s|0; c.height=img.height*s|0;
         c.getContext("2d").drawImage(img,0,0,c.width,c.height);
-        res(c.toDataURL("image/jpeg",0.6));
+        res(c.toDataURL("image/jpeg",0.5));
       };
       img.src=e.target.result;
     };
