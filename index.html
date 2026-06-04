@@ -162,6 +162,7 @@ let state = {
 
 // ─── Firebase ──────────────────────────────────────────────────────────────────
 function fbPath(pin){ return `${FB_URL}/families/${pin}.json`; }
+function fbPhotoPath(pin,kidId){ return `${FB_URL}/photos/${pin}/${kidId}.json`; }
 
 async function fbRead(pin){
   try{
@@ -180,29 +181,51 @@ async function fbWrite(pin, data){
       hist[k.id] = {};
       arr.forEach(e=>{ hist[k.id][String(e.id)] = e; });
     });
+    // Strip photos from main data — stored separately
     const slim = {
       kids: data.kids.map(k=>({...k,photo:null})),
       pts:  JSON.parse(JSON.stringify(data.pts||{})),
       hist,
       ts:   data.ts,
     };
-    console.log("fbWrite sending pts:", JSON.stringify(slim.pts));
     const r = await fetch(fbPath(pin),{
       method:"PUT",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify(slim),
+      keepalive:true,
     });
     if(!r.ok){
       const t=await r.text();
       console.error("fbWrite error",r.status,t);
       showToast("Sync error: "+r.status,"warn");
-    } else {
-      console.log("fbWrite OK");
     }
   }catch(e){
     console.error("fbWrite exception",e);
     showToast("No connection","warn");
   }
+}
+
+// Write a single kid's photo to its own Firebase node
+async function fbWritePhoto(pin, kidId, photoDataUrl){
+  try{
+    await fetch(fbPhotoPath(pin,kidId),{
+      method:"PUT",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(photoDataUrl), // just the string
+      keepalive:true,
+    });
+    console.log("Photo written to Firebase for",kidId);
+  }catch(e){ console.error("fbWritePhoto",e); }
+}
+
+// Read all photos for a family
+async function fbReadPhotos(pin){
+  try{
+    const r = await fetch(`${FB_URL}/photos/${pin}.json`);
+    if(!r.ok) return {};
+    const data = await r.json();
+    return data || {};
+  }catch(e){ return {}; }
 }
 
 function normalise(raw){
@@ -288,17 +311,16 @@ async function pollFirebase(){
   const remoteTs = remote.ts || 0;
   const justWrote = (Date.now() - localTs) < 3000;
 
-  // Skip if we just wrote (our own data is fresher)
   if(justWrote && localTs >= remoteTs) return;
-  // Skip if nothing changed
   if(remoteTs <= localTs) return;
 
-  // Data is newer on server — update state silently
-  const photos = loadPhotos(state.currentPin);
-  state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
+  // Fetch photos from Firebase + local cache
+  const localPhotos = loadPhotos(state.currentPin);
+  const fbPhotos = await fbReadPhotos(state.currentPin);
+  const allPhotos = {...localPhotos, ...fbPhotos};
+  state.data = {...remote, kids:mergePhotos(remote.kids, allPhotos)};
   state.syncTime = new Date();
 
-  // Update only the data elements in the DOM — no full re-render
   refreshDataElements();
 }
 
@@ -714,7 +736,10 @@ async function unlock(){
   const pin=state.pin;
   const photos=loadPhotos(pin);
   let raw=await fbRead(pin);
-  let d=raw?{...raw,kids:mergePhotos(raw.kids,photos)}:{...freshData(),kids:mergePhotos(freshData().kids,photos)};
+  // Also load photos from Firebase (stored separately)
+  const fbPhotos = await fbReadPhotos(pin);
+  const allPhotos = {...photos, ...fbPhotos}; // Firebase overrides local
+  let d=raw?{...raw,kids:mergePhotos(raw.kids,allPhotos)}:{...freshData(),kids:mergePhotos(freshData().kids,allPhotos)};
   if(!raw) await fbWrite(pin,d);
   state.currentPin=pin; state.data=d; state.pin="";
   state.syncTime=new Date(); state.screen="app";
@@ -815,6 +840,8 @@ function doAddKid(){
     ts:Date.now(),
   };
   persist(); // write first
+  // If new kid has a photo, write it to Firebase separately
+  if(k.photo && state.currentPin) fbWritePhoto(state.currentPin, id, k.photo);
   state.newName=""; state.newPhoto=null; state.activeKid=id; state.view="home";
   renderApp();
   showToast(`${k.name} added! 🎉`);
@@ -849,18 +876,25 @@ function doRemove(kidId){
 function removePhoto(kidId){
   if(!state.data) return;
   state.data={...state.data,kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:null}:k),ts:Date.now()};
-  // Remove from local photo storage too
+  // Remove from local storage
   const photos=loadPhotos(state.currentPin);
   delete photos[kidId];
   try{localStorage.setItem(PHOTO_KEY(state.currentPin),JSON.stringify(photos));}catch(e){}
+  // Remove from Firebase
+  if(state.currentPin) fetch(fbPhotoPath(state.currentPin,kidId),{method:"DELETE"}).catch(()=>{});
+  persist();
   renderApp(); showToast("Photo removed","warn");
 }
 
 async function handleEditPhoto(input, kidId){
   const f=input.files[0]; if(!f) return;
+  showToast("Uploading photo…","ok");
   const url=await resizeImg(f);
   state.data={...state.data,kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:url}:k),ts:Date.now()};
   savePhotos(state.currentPin,state.data.kids);
+  // Write photo to its own Firebase node
+  if(state.currentPin) await fbWritePhoto(state.currentPin, kidId, url);
+  persist(); // also update main data ts so other device knows to re-sync
   renderApp(); showToast("Photo updated! 📸");
 }
 
