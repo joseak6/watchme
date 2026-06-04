@@ -280,22 +280,72 @@ function persist(){
 }
 
 async function pollFirebase(){
-  if(!state.currentPin) return;
+  if(!state.currentPin || state.screen !== "app") return;
   const remote = await fbRead(state.currentPin);
   if(!remote) return;
-  // Always apply remote if it has a newer or equal ts
-  // Use remote as source of truth for pts and hist
-  if((remote.ts||0) >= (state.data?.ts||0)){
-    const photos = loadPhotos(state.currentPin);
-    // Keep local ts if we just wrote (within 2s) to avoid overwriting our own changes
-    const localTs = state.data?.ts||0;
-    const remoteTs = remote.ts||0;
-    const justWrote = (Date.now() - localTs) < 2000;
-    if(!justWrote || remoteTs > localTs){
-      state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
-      state.syncTime = new Date();
-      renderApp();
-    }
+
+  const localTs  = state.data?.ts || 0;
+  const remoteTs = remote.ts || 0;
+  const justWrote = (Date.now() - localTs) < 3000;
+
+  // Skip if we just wrote (our own data is fresher)
+  if(justWrote && localTs >= remoteTs) return;
+  // Skip if nothing changed
+  if(remoteTs <= localTs) return;
+
+  // Data is newer on server — update state silently
+  const photos = loadPhotos(state.currentPin);
+  state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
+  state.syncTime = new Date();
+
+  // Update only the data elements in the DOM — no full re-render
+  refreshDataElements();
+}
+
+function refreshDataElements(){
+  if(!state.data || state.screen !== "app") return;
+  const ak = state.data.kids.find(k=>k.id===state.activeKid) || state.data.kids[0];
+  if(!ak) return;
+
+  // Update kid tab point totals
+  state.data.kids.forEach(k=>{
+    const t = total(k.id);
+    const tabs = document.querySelectorAll('.kid-tab');
+    tabs.forEach(tab=>{
+      // match by kid name text
+      const nameEl = tab.querySelector('div > div:first-child');
+      const ptsEl  = tab.querySelector('div > div:last-child');
+      if(nameEl && nameEl.textContent === k.name && ptsEl){
+        ptsEl.textContent = t + " pts";
+      }
+    });
+  });
+
+  // Update hero total
+  const heroTotal = document.querySelector('.hero [data-pts]');
+  if(heroTotal) heroTotal.textContent = total(ak.id);
+
+  // Update category values and bars
+  const kPts = state.data.pts[ak.id] || {};
+  const pos = Object.values(kPts).filter(x=>x>0).reduce((a,b)=>a+b,0);
+  document.querySelectorAll('.cat-card[data-cat]').forEach(card=>{
+    const catId = card.dataset.cat;
+    const v = kPts[catId] ?? 0;
+    const valEl = card.querySelector('[data-val]');
+    const barEl = card.querySelector('[data-bar]');
+    if(valEl) valEl.textContent = v;
+    if(barEl) barEl.style.width = pos>0 ? `${Math.max(0,v)/pos*100}%` : '0%';
+  });
+
+  // Update sync badge
+  const badge = document.querySelector(".sync-badge");
+  if(badge && state.syncTime){
+    badge.innerHTML = `<span class="sync-dot"></span>Synced ${state.syncTime.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`;
+  }
+
+  // If on history view, do a full re-render (history changed)
+  if(state.view === "history"){
+    renderApp();
   }
 }
 
@@ -306,7 +356,7 @@ async function syncNow(){
   const photos = loadPhotos(state.currentPin);
   state.data = {...remote, kids:mergePhotos(remote.kids, photos)};
   state.syncTime = new Date();
-  renderApp();
+  renderApp(); // full re-render on manual sync
   showToast("Synced! ✓");
 }
 
@@ -424,13 +474,13 @@ function renderApp(){
       const v=kPts[c.id]??0;
       const pos=Object.values(kPts).filter(x=>x>0).reduce((a,b)=>a+b,0);
       const pct=pos>0?Math.max(0,v)/pos:0;
-      return `<div class="cat-card" style="position:relative">
+      return `<div class="cat-card" data-cat="${c.id}" style="position:relative">
         <button class="btn" onclick="resetCat('${c.id}')" title="Reset ${c.label}" style="position:absolute;top:8px;right:8px;background:none;border:none;font-size:13px;opacity:.35;cursor:pointer;padding:2px">↺</button>
         <div style="font-size:20px;margin-bottom:3px">${c.emoji}</div>
         <div style="font-size:11px;opacity:.55;font-weight:700">${c.label}</div>
-        <div style="font-size:22px;font-weight:900;color:${v<0?"#EF4444":ak.color}">${v}</div>
+        <div data-val style="font-size:22px;font-weight:900;color:${v<0?"#EF4444":ak.color}">${v}</div>
         <div style="height:3px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:5px">
-          <div style="height:100%;width:${pct*100}%;background:${ak.color};border-radius:3px;transition:width .5s"></div>
+          <div data-bar style="height:100%;width:${pct*100}%;background:${ak.color};border-radius:3px;transition:width .5s"></div>
         </div>
       </div>`;
     }).join("");
@@ -446,7 +496,7 @@ function renderApp(){
         </div>
         ${ak.photo?`<button class="btn" onclick="removePhoto('${ak.id}')" style="margin-top:6px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:8px;padding:4px 14px;color:#FC9494;font-size:11px;font-weight:700;cursor:pointer">Remove photo</button>`:""}
         <div style="font-size:14px;opacity:.65;font-weight:700;margin-bottom:2px">${ak.name}'s Total</div>
-        <div style="font-size:64px;font-weight:900;line-height:1;background:linear-gradient(135deg,${ak.color},#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${kTot}</div>
+        <div data-pts style="font-size:64px;font-weight:900;line-height:1;background:linear-gradient(135deg,${ak.color},#fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent">${kTot}</div>
         <div style="font-size:11px;opacity:.4;font-weight:700;letter-spacing:2px">POINTS</div>
       </div>
       <div style="margin-bottom:18px">
