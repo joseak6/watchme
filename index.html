@@ -117,7 +117,6 @@
 
 <script>
 // ─── Config ────────────────────────────────────────────────────────────────────
-const FB_KEY = "AIzaSyBdCG9Ov-O6YUUHTxBRavTWtmYVctUW7kc";
 const FB_URL  = "https://watchme-f9df7-default-rtdb.firebaseio.com";
 
 const CATS = [
@@ -162,7 +161,7 @@ let state = {
 };
 
 // ─── Firebase ──────────────────────────────────────────────────────────────────
-function fbPath(pin){ return `${FB_URL}/families/${pin}.json?auth=${FB_KEY}`; }
+function fbPath(pin){ return `${FB_URL}/families/${pin}.json`; }
 
 async function fbRead(pin){
   try{
