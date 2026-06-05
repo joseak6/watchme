@@ -888,19 +888,24 @@ function removePhoto(kidId){
 
 async function handleEditPhoto(input, kidId){
   const f=input.files[0]; if(!f) return;
-  showToast("Uploading photo…","ok");
-  const url=await resizeImg(f);
-  state.data={...state.data,kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:url}:k),ts:Date.now()};
-  savePhotos(state.currentPin,state.data.kids);
-  // Write photo to its own Firebase node
-  if(state.currentPin) await fbWritePhoto(state.currentPin, kidId, url);
-  persist(); // also update main data ts so other device knows to re-sync
-  renderApp(); showToast("Photo updated! 📸");
+  // Resize first
+  const url = await resizeImg(f);
+  // Update local state immediately and re-render
+  state.data = {...state.data, kids:state.data.kids.map(k=>k.id===kidId?{...k,photo:url}:k), ts:Date.now()};
+  savePhotos(state.currentPin, state.data.kids);
+  renderApp();
+  showToast("Photo updated! 📸");
+  // Write to Firebase in background (don't await — don't block render)
+  if(state.currentPin){
+    fbWritePhoto(state.currentPin, kidId, url);
+    persist();
+  }
 }
 
 async function handleNewPhoto(input){
   const f=input.files[0]; if(!f) return;
-  state.newPhoto=await resizeImg(f);
+  const url = await resizeImg(f);
+  state.newPhoto = url;
   renderApp();
 }
 
