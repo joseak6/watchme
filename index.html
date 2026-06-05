@@ -145,6 +145,7 @@ const CLR_OPTS = ["#FF6B9D","#FF9500","#7C3AED","#10B981","#3B82F6","#F59E0B","#
 // ─── State ──────────────────────────────────────────────────────────────────────
 let state = {
   screen: "pin",      // pin | app
+  photoTimer: null,
   pin: "",
   currentPin: null,
   data: null,         // {kids, pts, hist, ts}
@@ -371,6 +372,36 @@ function refreshDataElements(){
   }
 }
 
+async function pollPhotos(){
+  if(!state.currentPin || !state.data || state.screen !== "app") return;
+  try {
+    const fbPhotos = await fbReadPhotos(state.currentPin);
+    if(!fbPhotos || Object.keys(fbPhotos).length === 0) return;
+    let changed = false;
+    const updatedKids = state.data.kids.map(k => {
+      const remotePhoto = fbPhotos[k.id];
+      if(remotePhoto && remotePhoto !== k.photo){
+        changed = true;
+        return {...k, photo: remotePhoto};
+      }
+      return k;
+    });
+    if(changed){
+      state.data = {...state.data, kids: updatedKids};
+      savePhotos(state.currentPin, updatedKids);
+      // Update avatar elements in DOM without full re-render
+      updatedKids.forEach(k => {
+        if(!fbPhotos[k.id]) return;
+        document.querySelectorAll(`img[alt="${k.name}"]`).forEach(img => {
+          img.src = fbPhotos[k.id];
+        });
+      });
+      // If on home view, re-render to show updated avatar
+      if(state.view === "home") renderApp();
+    }
+  } catch(e) { console.error("pollPhotos", e); }
+}
+
 async function syncNow(){
   if(!state.currentPin) return;
   const remote = await fbRead(state.currentPin);
@@ -385,7 +416,8 @@ async function syncNow(){
 function startPolling(pin){
   if(state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(()=>pollFirebase(), 5000);
-  // Note: photos now stored in Firebase directly, localStorage is just a cache
+  // Poll photos separately every 15s regardless of data ts
+  state.photoTimer = setInterval(()=>pollPhotos(), 15000);
 
   // Also sync when app becomes visible
   document.addEventListener("visibilitychange", ()=>{
