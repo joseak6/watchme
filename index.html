@@ -209,14 +209,25 @@ async function fbWrite(pin, data){
 // Write a single kid's photo to its own Firebase node
 async function fbWritePhoto(pin, kidId, photoDataUrl){
   try{
-    await fetch(fbPhotoPath(pin,kidId),{
+    console.log("fbWritePhoto: writing photo for kid", kidId, "size:", photoDataUrl?.length, "bytes");
+    const r = await fetch(fbPhotoPath(pin,kidId),{
       method:"PUT",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(photoDataUrl), // just the string
+      body:JSON.stringify(photoDataUrl),
       keepalive:true,
     });
-    console.log("Photo written to Firebase for",kidId);
-  }catch(e){ console.error("fbWritePhoto",e); }
+    if(r.ok){
+      console.log("fbWritePhoto: SUCCESS for kid", kidId);
+      showToast("Photo synced! ✓");
+    } else {
+      const t = await r.text();
+      console.error("fbWritePhoto: FAILED", r.status, t);
+      showToast("Photo sync failed: "+r.status,"warn");
+    }
+  }catch(e){
+    console.error("fbWritePhoto exception:",e);
+    showToast("Photo sync error","warn");
+  }
 }
 
 // Read all photos for a family
@@ -278,7 +289,7 @@ function persist(){
     arr.forEach(e=>{hist[k.id][String(e.id)]=e;});
   });
   const payload = JSON.stringify({
-    kids: snapshot.kids, // include photos — compressed small enough for Firebase
+    kids: snapshot.kids.map(k=>({...k, photo:null})), // strip photos — written separately
     pts:  snapshot.pts,
     hist,
     ts:   snapshot.ts,
